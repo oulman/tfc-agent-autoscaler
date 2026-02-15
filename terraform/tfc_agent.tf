@@ -1,3 +1,10 @@
+# --- TFC Agent Image Resolution ---
+
+locals {
+  tfc_agent_ecr_image = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.ecr_cache_prefix}/${var.tfc_agent_upstream_image}"
+  tfc_agent_image     = coalesce(var.tfc_agent_image, local.tfc_agent_ecr_image)
+}
+
 # --- TFC Agent Fargate Service ---
 
 resource "aws_cloudwatch_log_group" "tfc_agent" {
@@ -96,14 +103,14 @@ resource "aws_ecs_task_definition" "tfc_agent" {
 
   container_definitions = jsonencode([{
     name        = "tfc-agent"
-    image       = var.tfc_agent_image
+    image       = local.tfc_agent_image
     essential   = true
     stopTimeout = 120
 
     environment = concat([
       { name = "TFE_ADDRESS", value = var.tfc_address },
       { name = "TFC_AGENT_NAME", value = var.name_prefix },
-    ], var.enable_spot_service ? [
+      ], var.enable_spot_service ? [
       { name = "TFC_AGENT_ACCEPT", value = var.tfc_agent_accept_cp_fargate },
     ] : [])
 
@@ -163,7 +170,7 @@ resource "aws_ecs_task_definition" "tfc_agent_spot" {
 
   container_definitions = jsonencode([{
     name        = "tfc-agent"
-    image       = var.tfc_agent_image
+    image       = local.tfc_agent_image
     essential   = true
     stopTimeout = 120
 
