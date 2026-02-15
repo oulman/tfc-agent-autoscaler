@@ -9,6 +9,14 @@ resource "aws_ecs_cluster" "main" {
   tags = var.tags
 }
 
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  count = var.enable_spot_service ? 1 : 0
+
+  cluster_name = aws_ecs_cluster.main.name
+
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+}
+
 resource "aws_cloudwatch_log_group" "autoscaler" {
   name              = "/ecs/${var.name_prefix}"
   retention_in_days = 30
@@ -35,7 +43,7 @@ resource "aws_ecs_task_definition" "autoscaler" {
       protocol      = "tcp"
     }]
 
-    environment = [
+    environment = concat([
       { name = "TFC_AGENT_POOL_ID", value = var.tfc_agent_pool_id },
       { name = "TFC_ORG", value = var.tfc_org },
       { name = "TFE_ADDRESS", value = var.tfc_address },
@@ -45,7 +53,11 @@ resource "aws_ecs_task_definition" "autoscaler" {
       { name = "MAX_AGENTS", value = tostring(var.max_agents) },
       { name = "POLL_INTERVAL", value = var.poll_interval },
       { name = "COOLDOWN_PERIOD", value = var.cooldown_period },
-    ]
+    ], var.enable_spot_service ? [
+      { name = "ECS_SPOT_SERVICE", value = aws_ecs_service.tfc_agent_spot[0].name },
+      { name = "SPOT_MIN_AGENTS", value = tostring(var.spot_min_agents) },
+      { name = "SPOT_MAX_AGENTS", value = tostring(var.spot_max_agents) },
+    ] : [])
 
     secrets = [{
       name      = "TFC_TOKEN"

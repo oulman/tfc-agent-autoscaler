@@ -210,11 +210,110 @@ func TestGetAgentDetails(t *testing.T) {
 	}
 }
 
+func TestGetPendingRunsByType(t *testing.T) {
+	tests := []struct {
+		name            string
+		workspaces      []*tfe.Workspace
+		runsPerStatus   map[string]map[string]int // wsID -> status filter -> count
+		wantPlanPending int
+		wantApplyPending int
+		wantErr         bool
+	}{
+		{
+			name: "mixed plan and apply pending",
+			workspaces: []*tfe.Workspace{
+				{ID: "ws-1"},
+			},
+			runsPerStatus: map[string]map[string]int{
+				"ws-1": {
+					planPendingStatuses:  3,
+					applyPendingStatuses: 2,
+				},
+			},
+			wantPlanPending:  3,
+			wantApplyPending: 2,
+		},
+		{
+			name: "multiple workspaces",
+			workspaces: []*tfe.Workspace{
+				{ID: "ws-1"},
+				{ID: "ws-2"},
+			},
+			runsPerStatus: map[string]map[string]int{
+				"ws-1": {
+					planPendingStatuses:  1,
+					applyPendingStatuses: 2,
+				},
+				"ws-2": {
+					planPendingStatuses:  4,
+					applyPendingStatuses: 0,
+				},
+			},
+			wantPlanPending:  5,
+			wantApplyPending: 2,
+		},
+		{
+			name:       "no workspaces",
+			workspaces: nil,
+			runsPerStatus: map[string]map[string]int{},
+			wantPlanPending:  0,
+			wantApplyPending: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				agentPoolID: "apool-123",
+				agentPools: &mockAgentPools{
+					readWithOptionsFn: func(_ context.Context, _ string, _ *tfe.AgentPoolReadOptions) (*tfe.AgentPool, error) {
+						return &tfe.AgentPool{
+							ID:         "apool-123",
+							Workspaces: tt.workspaces,
+						}, nil
+					},
+				},
+				runs: &mockRuns{
+					listFn: func(_ context.Context, wsID string, opts *tfe.RunListOptions) (*tfe.RunList, error) {
+						statusCounts := tt.runsPerStatus[wsID]
+						count := statusCounts[opts.Status]
+						items := make([]*tfe.Run, count)
+						for i := range items {
+							items[i] = &tfe.Run{ID: "run-placeholder"}
+						}
+						return &tfe.RunList{
+							Items:      items,
+							Pagination: &tfe.Pagination{TotalCount: count, TotalPages: 1, CurrentPage: 1},
+						}, nil
+					},
+				},
+			}
+
+			counts, err := c.GetPendingRunsByType(context.Background())
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if counts.PlanPending != tt.wantPlanPending {
+				t.Errorf("PlanPending: got %d, want %d", counts.PlanPending, tt.wantPlanPending)
+			}
+			if counts.ApplyPending != tt.wantApplyPending {
+				t.Errorf("ApplyPending: got %d, want %d", counts.ApplyPending, tt.wantApplyPending)
+			}
+		})
+	}
+}
+
 func TestGetPendingRuns(t *testing.T) {
 	tests := []struct {
 		name       string
 		workspaces []*tfe.Workspace
-		runsPerWS  map[string]int // workspace ID -> number of pending runs
+		runsPerWS  map[string]map[string]int // workspace ID -> status filter -> count
 		wantCount  int
 		wantErr    bool
 	}{
@@ -224,16 +323,16 @@ func TestGetPendingRuns(t *testing.T) {
 				{ID: "ws-1"},
 				{ID: "ws-2"},
 			},
-			runsPerWS: map[string]int{
-				"ws-1": 3,
-				"ws-2": 2,
+			runsPerWS: map[string]map[string]int{
+				"ws-1": {planPendingStatuses: 2, applyPendingStatuses: 1},
+				"ws-2": {planPendingStatuses: 1, applyPendingStatuses: 1},
 			},
 			wantCount: 5,
 		},
 		{
 			name:       "no workspaces",
 			workspaces: nil,
-			runsPerWS:  map[string]int{},
+			runsPerWS:  map[string]map[string]int{},
 			wantCount:  0,
 		},
 		{
@@ -241,8 +340,8 @@ func TestGetPendingRuns(t *testing.T) {
 			workspaces: []*tfe.Workspace{
 				{ID: "ws-1"},
 			},
-			runsPerWS: map[string]int{
-				"ws-1": 0,
+			runsPerWS: map[string]map[string]int{
+				"ws-1": {planPendingStatuses: 0, applyPendingStatuses: 0},
 			},
 			wantCount: 0,
 		},
@@ -261,8 +360,9 @@ func TestGetPendingRuns(t *testing.T) {
 					},
 				},
 				runs: &mockRuns{
-					listFn: func(_ context.Context, wsID string, _ *tfe.RunListOptions) (*tfe.RunList, error) {
-						count := tt.runsPerWS[wsID]
+					listFn: func(_ context.Context, wsID string, opts *tfe.RunListOptions) (*tfe.RunList, error) {
+						statusCounts := tt.runsPerWS[wsID]
+						count := statusCounts[opts.Status]
 						items := make([]*tfe.Run, count)
 						for i := range items {
 							items[i] = &tfe.Run{ID: "run-placeholder"}

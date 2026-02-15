@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// ServiceConfig holds ECS service name and agent count bounds.
+type ServiceConfig struct {
+	ECSService string
+	MinAgents  int
+	MaxAgents  int
+}
+
 // Config holds all configuration for the autoscaler.
 type Config struct {
 	TFCToken       string
@@ -20,6 +27,7 @@ type Config struct {
 	MaxAgents      int
 	CooldownPeriod time.Duration
 	HealthAddr     string
+	SpotService    *ServiceConfig // nil = single-service mode
 }
 
 // Load reads configuration from environment variables.
@@ -99,6 +107,36 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 
 	if cfg.MinAgents > cfg.MaxAgents {
 		return Config{}, fmt.Errorf("MIN_AGENTS (%d) cannot be greater than MAX_AGENTS (%d)", cfg.MinAgents, cfg.MaxAgents)
+	}
+
+	if v, ok := lookup("ECS_SPOT_SERVICE"); ok && v != "" {
+		spot := &ServiceConfig{
+			ECSService: v,
+			MinAgents:  0,
+			MaxAgents:  10,
+		}
+
+		if v, ok := lookup("SPOT_MIN_AGENTS"); ok && v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid SPOT_MIN_AGENTS %q: %w", v, err)
+			}
+			spot.MinAgents = n
+		}
+
+		if v, ok := lookup("SPOT_MAX_AGENTS"); ok && v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid SPOT_MAX_AGENTS %q: %w", v, err)
+			}
+			spot.MaxAgents = n
+		}
+
+		if spot.MinAgents > spot.MaxAgents {
+			return Config{}, fmt.Errorf("SPOT_MIN_AGENTS (%d) cannot be greater than SPOT_MAX_AGENTS (%d)", spot.MinAgents, spot.MaxAgents)
+		}
+
+		cfg.SpotService = spot
 	}
 
 	return cfg, nil

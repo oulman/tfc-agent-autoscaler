@@ -260,7 +260,7 @@ func TestReconcile(t *testing.T) {
 }
 
 func TestReconcileDoesNotSignalReady(t *testing.T) {
-	s := New(
+	s := New("test",
 		&mockTFC{
 			agentPoolStatusFn: func(_ context.Context) (int, int, int, error) {
 				return 0, 0, 0, nil
@@ -293,7 +293,7 @@ func TestReconcileDoesNotSignalReady(t *testing.T) {
 }
 
 func TestRunSignalsReadyAfterFirstSuccess(t *testing.T) {
-	s := New(
+	s := New("test",
 		&mockTFC{
 			agentPoolStatusFn: func(_ context.Context) (int, int, int, error) {
 				return 0, 0, 0, nil
@@ -326,7 +326,7 @@ func TestRunSignalsReadyAfterFirstSuccess(t *testing.T) {
 }
 
 func TestRunDoesNotSignalReadyOnPersistentError(t *testing.T) {
-	s := New(
+	s := New("test",
 		&mockTFC{
 			agentPoolStatusFn: func(_ context.Context) (int, int, int, error) {
 				return 0, 0, 0, errors.New("fail")
@@ -361,7 +361,7 @@ func TestRunDoesNotSignalReadyOnPersistentError(t *testing.T) {
 }
 
 func TestReadyChannelIsIdempotent(t *testing.T) {
-	s := New(
+	s := New("test",
 		&mockTFC{
 			agentPoolStatusFn: func(_ context.Context) (int, int, int, error) {
 				return 0, 0, 0, nil
@@ -397,7 +397,7 @@ func TestReadyChannelIsIdempotent(t *testing.T) {
 }
 
 func TestReadyConcurrentAccess(t *testing.T) {
-	s := New(
+	s := New("test",
 		&mockTFC{
 			agentPoolStatusFn: func(_ context.Context) (int, int, int, error) {
 				return 0, 0, 0, nil

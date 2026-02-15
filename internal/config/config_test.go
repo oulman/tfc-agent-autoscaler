@@ -140,6 +140,93 @@ func TestLoad(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "spot service enabled",
+			env: map[string]string{
+				"TFC_TOKEN":         "test-token",
+				"TFC_AGENT_POOL_ID": "apool-123",
+				"TFC_ORG":           "my-org",
+				"ECS_CLUSTER":       "my-cluster",
+				"ECS_SERVICE":       "tfc-agent",
+				"ECS_SPOT_SERVICE":  "tfc-agent-spot",
+				"SPOT_MIN_AGENTS":   "1",
+				"SPOT_MAX_AGENTS":   "20",
+			},
+			want: Config{
+				TFCToken:       "test-token",
+				TFCAddress:     "https://app.terraform.io",
+				TFCAgentPoolID: "apool-123",
+				TFCOrg:         "my-org",
+				ECSCluster:     "my-cluster",
+				ECSService:     "tfc-agent",
+				PollInterval:   10 * time.Second,
+				MinAgents:      0,
+				MaxAgents:      10,
+				CooldownPeriod: 60 * time.Second,
+				HealthAddr:     ":8080",
+				SpotService: &ServiceConfig{
+					ECSService: "tfc-agent-spot",
+					MinAgents:  1,
+					MaxAgents:  20,
+				},
+			},
+		},
+		{
+			name: "spot service with defaults",
+			env: map[string]string{
+				"TFC_TOKEN":         "test-token",
+				"TFC_AGENT_POOL_ID": "apool-123",
+				"TFC_ORG":           "my-org",
+				"ECS_CLUSTER":       "my-cluster",
+				"ECS_SERVICE":       "tfc-agent",
+				"ECS_SPOT_SERVICE":  "tfc-agent-spot",
+			},
+			want: Config{
+				TFCToken:       "test-token",
+				TFCAddress:     "https://app.terraform.io",
+				TFCAgentPoolID: "apool-123",
+				TFCOrg:         "my-org",
+				ECSCluster:     "my-cluster",
+				ECSService:     "tfc-agent",
+				PollInterval:   10 * time.Second,
+				MinAgents:      0,
+				MaxAgents:      10,
+				CooldownPeriod: 60 * time.Second,
+				HealthAddr:     ":8080",
+				SpotService: &ServiceConfig{
+					ECSService: "tfc-agent-spot",
+					MinAgents:  0,
+					MaxAgents:  10,
+				},
+			},
+		},
+		{
+			name: "spot min greater than spot max",
+			env: map[string]string{
+				"TFC_TOKEN":         "test-token",
+				"TFC_AGENT_POOL_ID": "apool-123",
+				"TFC_ORG":           "my-org",
+				"ECS_CLUSTER":       "my-cluster",
+				"ECS_SERVICE":       "tfc-agent",
+				"ECS_SPOT_SERVICE":  "tfc-agent-spot",
+				"SPOT_MIN_AGENTS":   "15",
+				"SPOT_MAX_AGENTS":   "5",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid SPOT_MIN_AGENTS",
+			env: map[string]string{
+				"TFC_TOKEN":         "test-token",
+				"TFC_AGENT_POOL_ID": "apool-123",
+				"TFC_ORG":           "my-org",
+				"ECS_CLUSTER":       "my-cluster",
+				"ECS_SERVICE":       "tfc-agent",
+				"ECS_SPOT_SERVICE":  "tfc-agent-spot",
+				"SPOT_MIN_AGENTS":   "abc",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -159,8 +246,21 @@ func TestLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
+			if got.TFCToken != tt.want.TFCToken || got.TFCAddress != tt.want.TFCAddress ||
+				got.TFCAgentPoolID != tt.want.TFCAgentPoolID || got.TFCOrg != tt.want.TFCOrg ||
+				got.ECSCluster != tt.want.ECSCluster || got.ECSService != tt.want.ECSService ||
+				got.PollInterval != tt.want.PollInterval || got.MinAgents != tt.want.MinAgents ||
+				got.MaxAgents != tt.want.MaxAgents || got.CooldownPeriod != tt.want.CooldownPeriod ||
+				got.HealthAddr != tt.want.HealthAddr {
 				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+			if (got.SpotService == nil) != (tt.want.SpotService == nil) {
+				t.Errorf("SpotService: got %v, want %v", got.SpotService, tt.want.SpotService)
+			}
+			if got.SpotService != nil && tt.want.SpotService != nil {
+				if *got.SpotService != *tt.want.SpotService {
+					t.Errorf("SpotService: got %+v, want %+v", *got.SpotService, *tt.want.SpotService)
+				}
 			}
 		})
 	}

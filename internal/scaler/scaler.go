@@ -38,6 +38,7 @@ type MetricsRecorder interface {
 
 // Scaler orchestrates the autoscaling control loop.
 type Scaler struct {
+	name          string
 	tfc           TFCClient
 	ecs           ECSClient
 	minAgents     int
@@ -51,9 +52,10 @@ type Scaler struct {
 	metrics       MetricsRecorder
 }
 
-// New creates a new Scaler.
-func New(tfc TFCClient, ecs ECSClient, minAgents, maxAgents int, pollInterval, cooldown time.Duration, logger *slog.Logger) *Scaler {
+// New creates a new Scaler with the given name for logging disambiguation.
+func New(name string, tfc TFCClient, ecs ECSClient, minAgents, maxAgents int, pollInterval, cooldown time.Duration, logger *slog.Logger) *Scaler {
 	return &Scaler{
+		name:         name,
 		tfc:          tfc,
 		ecs:          ecs,
 		minAgents:    minAgents,
@@ -78,6 +80,7 @@ func (s *Scaler) Ready() <-chan struct{} {
 // Run starts the polling loop and blocks until the context is canceled.
 func (s *Scaler) Run(ctx context.Context) error {
 	s.logger.Info("starting autoscaler",
+		"scaler", s.name,
 		"min_agents", s.minAgents,
 		"max_agents", s.maxAgents,
 		"poll_interval", s.pollInterval,
@@ -89,7 +92,7 @@ func (s *Scaler) Run(ctx context.Context) error {
 
 	// Run immediately on start, then on each tick.
 	if err := s.Reconcile(ctx); err != nil {
-		s.logger.Error("reconcile failed", "error", err)
+		s.logger.Error("reconcile failed", "scaler", s.name, "error", err)
 	} else {
 		s.markReady()
 	}
@@ -97,11 +100,11 @@ func (s *Scaler) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("shutting down autoscaler")
+			s.logger.Info("shutting down autoscaler", "scaler", s.name)
 			return ctx.Err()
 		case <-ticker.C:
 			if err := s.Reconcile(ctx); err != nil {
-				s.logger.Error("reconcile failed", "error", err)
+				s.logger.Error("reconcile failed", "scaler", s.name, "error", err)
 			} else {
 				s.markReady()
 			}
@@ -137,6 +140,7 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 	desiredInt32 := int32(desired)
 
 	s.logger.Info("reconcile",
+		"scaler", s.name,
 		"pending_runs", pendingRuns,
 		"busy_agents", busy,
 		"idle_agents", idle,
@@ -155,6 +159,7 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 	if desiredInt32 < currentDesired {
 		if !s.lastScaleTime.IsZero() && time.Since(s.lastScaleTime) < s.cooldown {
 			s.logger.Info("scale-down skipped due to cooldown",
+				"scaler", s.name,
 				"last_scale", s.lastScaleTime,
 				"cooldown_remaining", s.cooldown-time.Since(s.lastScaleTime),
 			)
@@ -173,6 +178,7 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 		desiredInt32 = currentDesired - int32(scaleDownBy)
 
 		s.logger.Info("idle guard applied",
+			"scaler", s.name,
 			"computed_desired", desired,
 			"idle_agents", idle,
 			"scale_down_by", scaleDownBy,
@@ -187,6 +193,7 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 		// Task protection: protect busy tasks before scaling down.
 		if err := s.protectBusyTasks(ctx); err != nil {
 			s.logger.Warn("task protection failed, proceeding with idle-guarded scale-down",
+				"scaler", s.name,
 				"error", err,
 			)
 			if s.metrics != nil {
@@ -201,6 +208,7 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 	}
 
 	s.logger.Info("scaling",
+		"scaler", s.name,
 		"from", currentDesired,
 		"to", desiredInt32,
 	)
@@ -266,6 +274,7 @@ func (s *Scaler) protectBusyTasks(ctx context.Context) error {
 	}
 
 	s.logger.Info("task protection updated",
+		"scaler", s.name,
 		"busy_protected", len(busyArns),
 		"idle_unprotected", len(idleArns),
 	)

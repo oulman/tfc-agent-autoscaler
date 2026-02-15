@@ -91,6 +91,36 @@ variable "cooldown_period" {
 
 # --- TFC Agent service configuration ---
 
+variable "enable_spot_service" {
+  description = "Whether to create a FARGATE_SPOT service for plan-type jobs"
+  type        = bool
+  default     = false
+}
+
+variable "spot_min_agents" {
+  description = "Minimum number of spot TFC agents"
+  type        = number
+  default     = 0
+}
+
+variable "spot_max_agents" {
+  description = "Maximum number of spot TFC agents"
+  type        = number
+  default     = 10
+}
+
+variable "tfc_agent_accept_cp_fargate" {
+  description = "Comma-separated list of job types for the FARGATE capacity provider agent service. Only used when enable_spot_service is true."
+  type        = string
+  default     = "apply,stack_apply"
+}
+
+variable "tfc_agent_accept_cp_fargate_spot" {
+  description = "Comma-separated list of job types for the FARGATE_SPOT capacity provider agent service. Only used when enable_spot_service is true."
+  type        = string
+  default     = "plan,policy,assessment,ingress,stack_prepare,stack_plan,source_bundle,stack_aggregate_outputs,test"
+}
+
 variable "tfc_agent_image" {
   description = "Docker image for the TFC agent"
   type        = string

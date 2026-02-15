@@ -123,38 +123,69 @@ func (c *Client) GetAgentPoolStatus(ctx context.Context) (busy, idle, total int,
 	return busy, idle, total, nil
 }
 
-// pendingStatuses is the comma-separated filter value for runs waiting on agents.
-var pendingStatuses = strings.Join([]string{
+// planPendingStatuses filters runs waiting for plan capacity.
+var planPendingStatuses = strings.Join([]string{
 	string(tfe.RunPending),
 	string(tfe.RunPlanQueued),
+}, ",")
+
+// applyPendingStatuses filters runs waiting for apply capacity.
+var applyPendingStatuses = strings.Join([]string{
 	string(tfe.RunApplyQueued),
 }, ",")
 
-// GetPendingRuns returns the total count of pending/queued runs across all
-// workspaces assigned to this agent pool.
-func (c *Client) GetPendingRuns(ctx context.Context) (int, error) {
+// PendingRunCounts holds pending run counts split by type.
+type PendingRunCounts struct {
+	PlanPending  int
+	ApplyPending int
+}
+
+// Total returns the sum of plan and apply pending runs.
+func (p PendingRunCounts) Total() int {
+	return p.PlanPending + p.ApplyPending
+}
+
+// GetPendingRunsByType returns pending run counts split by plan vs apply type
+// across all workspaces assigned to this agent pool.
+func (c *Client) GetPendingRunsByType(ctx context.Context) (PendingRunCounts, error) {
 	pool, err := c.agentPools.ReadWithOptions(ctx, c.agentPoolID, &tfe.AgentPoolReadOptions{
 		Include: []tfe.AgentPoolIncludeOpt{tfe.AgentPoolWorkspaces},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("reading agent pool: %w", err)
+		return PendingRunCounts{}, fmt.Errorf("reading agent pool: %w", err)
 	}
 
-	var total int
+	var counts PendingRunCounts
 	for _, ws := range pool.Workspaces {
-		count, err := c.countPendingRunsForWorkspace(ctx, ws.ID)
+		planCount, err := c.countRunsForWorkspace(ctx, ws.ID, planPendingStatuses)
 		if err != nil {
-			return 0, fmt.Errorf("counting runs for workspace %s: %w", ws.ID, err)
+			return PendingRunCounts{}, fmt.Errorf("counting plan runs for workspace %s: %w", ws.ID, err)
 		}
-		total += count
+		counts.PlanPending += planCount
+
+		applyCount, err := c.countRunsForWorkspace(ctx, ws.ID, applyPendingStatuses)
+		if err != nil {
+			return PendingRunCounts{}, fmt.Errorf("counting apply runs for workspace %s: %w", ws.ID, err)
+		}
+		counts.ApplyPending += applyCount
 	}
 
-	return total, nil
+	return counts, nil
 }
 
-func (c *Client) countPendingRunsForWorkspace(ctx context.Context, workspaceID string) (int, error) {
+// GetPendingRuns returns the total count of pending/queued runs across all
+// workspaces assigned to this agent pool.
+func (c *Client) GetPendingRuns(ctx context.Context) (int, error) {
+	counts, err := c.GetPendingRunsByType(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return counts.Total(), nil
+}
+
+func (c *Client) countRunsForWorkspace(ctx context.Context, workspaceID, statuses string) (int, error) {
 	runs, err := c.runs.List(ctx, workspaceID, &tfe.RunListOptions{
-		Status: pendingStatuses,
+		Status: statuses,
 	})
 	if err != nil {
 		return 0, err
