@@ -53,7 +53,7 @@ resource "aws_ecs_task_definition" "autoscaler" {
       { name = "MAX_AGENTS", value = tostring(var.max_agents) },
       { name = "POLL_INTERVAL", value = var.poll_interval },
       { name = "COOLDOWN_PERIOD", value = var.cooldown_period },
-    ], var.enable_spot_service ? [
+      ], var.enable_spot_service ? [
       { name = "ECS_SPOT_SERVICE", value = aws_ecs_service.tfc_agent_spot[0].name },
       { name = "SPOT_MIN_AGENTS", value = tostring(var.spot_min_agents) },
       { name = "SPOT_MAX_AGENTS", value = tostring(var.spot_max_agents) },

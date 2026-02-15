@@ -122,7 +122,19 @@ variable "tfc_agent_accept_cp_fargate_spot" {
 }
 
 variable "tfc_agent_image" {
-  description = "Docker image for the TFC agent"
+  description = "Docker image for the TFC agent. When null (default), uses the ECR pull-through cache image."
+  type        = string
+  default     = null
+}
+
+variable "ecr_cache_prefix" {
+  description = "ECR namespace prefix for pull-through cached images"
+  type        = string
+  default     = "docker-hub"
+}
+
+variable "tfc_agent_upstream_image" {
+  description = "Upstream Docker Hub image path for the TFC agent"
   type        = string
   default     = "hashicorp/tfc-agent:latest"
 }

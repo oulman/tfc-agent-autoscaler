@@ -59,3 +59,15 @@ output "tfc_agent_log_group_name" {
   description = "CloudWatch log group for TFC agent logs"
   value       = aws_cloudwatch_log_group.tfc_agent.name
 }
+
+# --- ECR Pull-Through Cache outputs ---
+
+output "ecr_pull_through_cache_prefix" {
+  description = "ECR namespace prefix for Docker Hub pull-through cached images"
+  value       = aws_ecr_pull_through_cache_rule.docker_hub.ecr_repository_prefix
+}
+
+output "tfc_agent_ecr_image" {
+  description = "Resolved ECR image URI for the TFC agent (via pull-through cache or override)"
+  value       = local.tfc_agent_image
+}

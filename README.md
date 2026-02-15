@@ -141,6 +141,36 @@ Deploy as its own ECS service alongside the agent service. The autoscaler needs:
 - **IAM permissions**: `ecs:DescribeServices`, `ecs:UpdateService`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:UpdateTaskProtection` on the agent service.
 - **Network access**: The task must be able to reach the TFC/TFE API and the ECS API.
 
+## Terraform Deployment
+
+The `terraform/` directory contains a complete deployment configuration for the autoscaler and TFC agent services on ECS Fargate.
+
+### ECR Pull-Through Cache
+
+By default, the TFC agent image is pulled through an ECR pull-through cache rather than directly from Docker Hub. This avoids Docker Hub anonymous rate limits (100 pulls/6h) and reduces image pull latency since the image is cached in-region.
+
+The resolved image URI follows the pattern:
+
+```
+<account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/hashicorp/tfc-agent:latest
+```
+
+To override and use a specific image instead (e.g. a private registry), set `tfc_agent_image`:
+
+```hcl
+tfc_agent_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-tfc-agent:v1.0"
+```
+
+### Terraform Variables
+
+In addition to the core deployment variables (`container_image`, `tfc_token`, `tfc_agent_pool_id`, etc.), the following control the TFC agent image:
+
+| Variable | Default | Description |
+|---|---|---|
+| `tfc_agent_image` | `null` | Explicit image override; when null, uses the ECR pull-through cache |
+| `tfc_agent_upstream_image` | `hashicorp/tfc-agent:latest` | Upstream Docker Hub image path |
+| `ecr_cache_prefix` | `docker-hub` | ECR namespace prefix for cached images |
+
 ## Architecture
 
 ```
@@ -152,4 +182,5 @@ internal/
   metrics/             Prometheus metrics (service-labeled gauges/counters)
   scaler/              Autoscaling decision engine
   tfc/                 Terraform Cloud client (agents, pending runs, ServiceView filtering)
+terraform/               ECS Fargate deployment (VPC, ECS cluster, agent services, ECR cache)
 ```
