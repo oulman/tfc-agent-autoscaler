@@ -1,0 +1,293 @@
+package tfc
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/hashicorp/go-tfe"
+)
+
+// mockAgentPools implements the subset of tfe.AgentPools we use.
+type mockAgentPools struct {
+	readWithOptionsFn func(ctx context.Context, agentPoolID string, options *tfe.AgentPoolReadOptions) (*tfe.AgentPool, error)
+}
+
+func (m *mockAgentPools) ReadWithOptions(ctx context.Context, agentPoolID string, options *tfe.AgentPoolReadOptions) (*tfe.AgentPool, error) {
+	return m.readWithOptionsFn(ctx, agentPoolID, options)
+}
+
+// mockAgents implements the subset of tfe.Agents we use.
+type mockAgents struct {
+	listFn func(ctx context.Context, agentPoolID string, options *tfe.AgentListOptions) (*tfe.AgentList, error)
+}
+
+func (m *mockAgents) List(ctx context.Context, agentPoolID string, options *tfe.AgentListOptions) (*tfe.AgentList, error) {
+	return m.listFn(ctx, agentPoolID, options)
+}
+
+// mockRuns implements the subset of tfe.Runs we use.
+type mockRuns struct {
+	listFn func(ctx context.Context, workspaceID string, options *tfe.RunListOptions) (*tfe.RunList, error)
+}
+
+func (m *mockRuns) List(ctx context.Context, workspaceID string, options *tfe.RunListOptions) (*tfe.RunList, error) {
+	return m.listFn(ctx, workspaceID, options)
+}
+
+func TestGetAgentPoolStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		agents    []*tfe.Agent
+		wantBusy  int
+		wantIdle  int
+		wantTotal int
+		wantErr   bool
+	}{
+		{
+			name: "mixed statuses",
+			agents: []*tfe.Agent{
+				{ID: "agent-1", Status: "idle"},
+				{ID: "agent-2", Status: "busy"},
+				{ID: "agent-3", Status: "busy"},
+				{ID: "agent-4", Status: "idle"},
+				{ID: "agent-5", Status: "unknown"},
+			},
+			wantBusy:  2,
+			wantIdle:  2,
+			wantTotal: 5,
+		},
+		{
+			name:      "no agents",
+			agents:    []*tfe.Agent{},
+			wantBusy:  0,
+			wantIdle:  0,
+			wantTotal: 0,
+		},
+		{
+			name: "all busy",
+			agents: []*tfe.Agent{
+				{ID: "agent-1", Status: "busy"},
+				{ID: "agent-2", Status: "busy"},
+			},
+			wantBusy:  2,
+			wantIdle:  0,
+			wantTotal: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				agentPoolID: "apool-123",
+				agents: &mockAgents{
+					listFn: func(_ context.Context, _ string, _ *tfe.AgentListOptions) (*tfe.AgentList, error) {
+						return &tfe.AgentList{
+							Items:      tt.agents,
+							Pagination: &tfe.Pagination{TotalPages: 1, CurrentPage: 1},
+						}, nil
+					},
+				},
+			}
+
+			busy, idle, total, err := c.GetAgentPoolStatus(context.Background())
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if busy != tt.wantBusy {
+				t.Errorf("busy: got %d, want %d", busy, tt.wantBusy)
+			}
+			if idle != tt.wantIdle {
+				t.Errorf("idle: got %d, want %d", idle, tt.wantIdle)
+			}
+			if total != tt.wantTotal {
+				t.Errorf("total: got %d, want %d", total, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func TestGetAgentDetails(t *testing.T) {
+	tests := []struct {
+		name    string
+		listFn  func(ctx context.Context, agentPoolID string, options *tfe.AgentListOptions) (*tfe.AgentList, error)
+		want    []AgentInfo
+		wantErr bool
+	}{
+		{
+			name: "mixed agents",
+			listFn: func(_ context.Context, _ string, _ *tfe.AgentListOptions) (*tfe.AgentList, error) {
+				return &tfe.AgentList{
+					Items: []*tfe.Agent{
+						{ID: "agent-1", Name: "worker-1", IP: "10.0.0.1", Status: "idle"},
+						{ID: "agent-2", Name: "worker-2", IP: "10.0.0.2", Status: "busy"},
+						{ID: "agent-3", Name: "worker-3", IP: "10.0.0.3", Status: "unknown"},
+					},
+					Pagination: &tfe.Pagination{TotalPages: 1, CurrentPage: 1},
+				}, nil
+			},
+			want: []AgentInfo{
+				{ID: "agent-1", Name: "worker-1", IP: "10.0.0.1", Status: "idle"},
+				{ID: "agent-2", Name: "worker-2", IP: "10.0.0.2", Status: "busy"},
+				{ID: "agent-3", Name: "worker-3", IP: "10.0.0.3", Status: "unknown"},
+			},
+		},
+		{
+			name: "empty pool",
+			listFn: func(_ context.Context, _ string, _ *tfe.AgentListOptions) (*tfe.AgentList, error) {
+				return &tfe.AgentList{
+					Items:      []*tfe.Agent{},
+					Pagination: &tfe.Pagination{TotalPages: 1, CurrentPage: 1},
+				}, nil
+			},
+			want: nil,
+		},
+		{
+			name: "API error",
+			listFn: func(_ context.Context, _ string, _ *tfe.AgentListOptions) (*tfe.AgentList, error) {
+				return nil, fmt.Errorf("api failure")
+			},
+			wantErr: true,
+		},
+		{
+			name: "multi-page pagination",
+			listFn: func(_ context.Context, _ string, opts *tfe.AgentListOptions) (*tfe.AgentList, error) {
+				if opts.PageNumber == 0 || opts.PageNumber == 1 {
+					return &tfe.AgentList{
+						Items: []*tfe.Agent{
+							{ID: "agent-1", Name: "worker-1", IP: "10.0.0.1", Status: "idle"},
+						},
+						Pagination: &tfe.Pagination{TotalPages: 2, CurrentPage: 1, NextPage: 2},
+					}, nil
+				}
+				return &tfe.AgentList{
+					Items: []*tfe.Agent{
+						{ID: "agent-2", Name: "worker-2", IP: "10.0.0.2", Status: "busy"},
+					},
+					Pagination: &tfe.Pagination{TotalPages: 2, CurrentPage: 2},
+				}, nil
+			},
+			want: []AgentInfo{
+				{ID: "agent-1", Name: "worker-1", IP: "10.0.0.1", Status: "idle"},
+				{ID: "agent-2", Name: "worker-2", IP: "10.0.0.2", Status: "busy"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				agentPoolID: "apool-123",
+				agents:      &mockAgents{listFn: tt.listFn},
+			}
+
+			got, err := c.GetAgentDetails(context.Background())
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d agents, want %d", len(got), len(tt.want))
+			}
+			for i, g := range got {
+				w := tt.want[i]
+				if g.ID != w.ID || g.Name != w.Name || g.IP != w.IP || g.Status != w.Status {
+					t.Errorf("agent[%d]: got %+v, want %+v", i, g, w)
+				}
+			}
+		})
+	}
+}
+
+func TestGetPendingRuns(t *testing.T) {
+	tests := []struct {
+		name       string
+		workspaces []*tfe.Workspace
+		runsPerWS  map[string]int // workspace ID -> number of pending runs
+		wantCount  int
+		wantErr    bool
+	}{
+		{
+			name: "runs across multiple workspaces",
+			workspaces: []*tfe.Workspace{
+				{ID: "ws-1"},
+				{ID: "ws-2"},
+			},
+			runsPerWS: map[string]int{
+				"ws-1": 3,
+				"ws-2": 2,
+			},
+			wantCount: 5,
+		},
+		{
+			name:       "no workspaces",
+			workspaces: nil,
+			runsPerWS:  map[string]int{},
+			wantCount:  0,
+		},
+		{
+			name: "workspaces with no pending runs",
+			workspaces: []*tfe.Workspace{
+				{ID: "ws-1"},
+			},
+			runsPerWS: map[string]int{
+				"ws-1": 0,
+			},
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				agentPoolID: "apool-123",
+				agentPools: &mockAgentPools{
+					readWithOptionsFn: func(_ context.Context, _ string, _ *tfe.AgentPoolReadOptions) (*tfe.AgentPool, error) {
+						return &tfe.AgentPool{
+							ID:         "apool-123",
+							Workspaces: tt.workspaces,
+						}, nil
+					},
+				},
+				runs: &mockRuns{
+					listFn: func(_ context.Context, wsID string, _ *tfe.RunListOptions) (*tfe.RunList, error) {
+						count := tt.runsPerWS[wsID]
+						items := make([]*tfe.Run, count)
+						for i := range items {
+							items[i] = &tfe.Run{ID: "run-placeholder"}
+						}
+						return &tfe.RunList{
+							Items:      items,
+							Pagination: &tfe.Pagination{TotalCount: count, TotalPages: 1, CurrentPage: 1},
+						}, nil
+					},
+				},
+			}
+
+			count, err := c.GetPendingRuns(context.Background())
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if count != tt.wantCount {
+				t.Errorf("got %d, want %d", count, tt.wantCount)
+			}
+		})
+	}
+}

@@ -1,0 +1,36 @@
+aws_region  = "us-east-1"
+name_prefix = "tfc-autoscaler"
+
+# Container image - push to ECR first, then reference here
+container_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/tfc-agent-autoscaler:latest"
+
+# TFC API token (used by the autoscaler to query agent pool status)
+# Stored in Secrets Manager by Terraform - pass via TF_VAR_tfc_token or -var
+# tfc_token = "REPLACE_ME"
+
+# TFC agent token (used by tfc-agent to register with the agent pool)
+# Stored in Secrets Manager by Terraform - pass via TF_VAR_tfc_agent_token or -var
+# tfc_agent_token = "REPLACE_ME"
+
+# TFC configuration
+tfc_org           = "my-org"
+tfc_agent_pool_id = "apool-xxxxxxxxxx"
+# tfc_address     = "https://app.terraform.io"
+
+# Scaling bounds
+min_agents = 0
+max_agents = 10
+
+# Tuning
+# poll_interval  = "10s"
+# cooldown_period = "60s"
+
+# TFC Agent container sizing (optional)
+# tfc_agent_image  = "hashicorp/tfc-agent:latest"
+# tfc_agent_cpu    = 256
+# tfc_agent_memory = 512
+
+tags = {
+  Project   = "tfc-agent-autoscaler"
+  ManagedBy = "terraform"
+}
