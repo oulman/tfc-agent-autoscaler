@@ -50,6 +50,27 @@ func (p *ChannelProbe) IsReady() bool {
 	}
 }
 
+// CompositeProbe aggregates multiple ReadinessProbes.
+// It reports ready only when all sub-probes are ready.
+type CompositeProbe struct {
+	probes []ReadinessProbe
+}
+
+// NewCompositeProbe creates a CompositeProbe from the given probes.
+func NewCompositeProbe(probes ...ReadinessProbe) *CompositeProbe {
+	return &CompositeProbe{probes: probes}
+}
+
+// IsReady returns true only when all sub-probes are ready.
+func (c *CompositeProbe) IsReady() bool {
+	for _, p := range c.probes {
+		if !p.IsReady() {
+			return false
+		}
+	}
+	return true
+}
+
 // ServerOption configures optional behavior for Server.
 type ServerOption func(*Server)
 

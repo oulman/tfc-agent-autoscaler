@@ -95,14 +95,17 @@ resource "aws_ecs_task_definition" "tfc_agent" {
   task_role_arn            = aws_iam_role.agent_task.arn
 
   container_definitions = jsonencode([{
-    name      = "tfc-agent"
-    image     = var.tfc_agent_image
-    essential = true
+    name        = "tfc-agent"
+    image       = var.tfc_agent_image
+    essential   = true
+    stopTimeout = 120
 
-    environment = [
+    environment = concat([
       { name = "TFE_ADDRESS", value = var.tfc_address },
       { name = "TFC_AGENT_NAME", value = var.name_prefix },
-    ]
+    ], var.enable_spot_service ? [
+      { name = "TFC_AGENT_ACCEPT", value = var.tfc_agent_accept_cp_fargate },
+    ] : [])
 
     secrets = [{
       name      = "TFC_AGENT_TOKEN"
@@ -141,6 +144,80 @@ resource "aws_ecs_service" "tfc_agent" {
     enable   = true
     rollback = true
   }
+
+  tags = var.tags
+}
+
+# --- Spot Agent Task Definition (plan-type jobs on FARGATE_SPOT) ---
+
+resource "aws_ecs_task_definition" "tfc_agent_spot" {
+  count = var.enable_spot_service ? 1 : 0
+
+  family                   = "${var.name_prefix}-agent-spot"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.tfc_agent_cpu
+  memory                   = var.tfc_agent_memory
+  execution_role_arn       = aws_iam_role.agent_execution.arn
+  task_role_arn            = aws_iam_role.agent_task.arn
+
+  container_definitions = jsonencode([{
+    name        = "tfc-agent"
+    image       = var.tfc_agent_image
+    essential   = true
+    stopTimeout = 120
+
+    environment = [
+      { name = "TFE_ADDRESS", value = var.tfc_address },
+      { name = "TFC_AGENT_NAME", value = "${var.name_prefix}-spot" },
+      { name = "TFC_AGENT_ACCEPT", value = var.tfc_agent_accept_cp_fargate_spot },
+    ]
+
+    secrets = [{
+      name      = "TFC_AGENT_TOKEN"
+      valueFrom = aws_secretsmanager_secret.tfc_agent_token.arn
+    }]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.tfc_agent.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "agent-spot"
+      }
+    }
+  }])
+
+  tags = var.tags
+}
+
+# --- Spot Agent ECS Service (FARGATE_SPOT capacity provider) ---
+
+resource "aws_ecs_service" "tfc_agent_spot" {
+  count = var.enable_spot_service ? 1 : 0
+
+  name            = "${var.name_prefix}-agent-spot"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.tfc_agent_spot[0].arn
+  desired_count   = var.spot_min_agents
+
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+  }
+
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.tfc_agent.id]
+    assign_public_ip = false
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  depends_on = [aws_ecs_cluster_capacity_providers.main]
 
   tags = var.tags
 }

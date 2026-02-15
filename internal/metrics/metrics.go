@@ -12,17 +12,17 @@ import (
 type Metrics struct {
 	registry *prometheus.Registry
 
-	pendingRuns     prometheus.Gauge
-	busyAgents      prometheus.Gauge
-	idleAgents      prometheus.Gauge
-	totalAgents     prometheus.Gauge
-	ecsDesiredCount prometheus.Gauge
-	ecsRunningCount prometheus.Gauge
+	pendingRuns     *prometheus.GaugeVec
+	busyAgents      *prometheus.GaugeVec
+	idleAgents      *prometheus.GaugeVec
+	totalAgents     *prometheus.GaugeVec
+	ecsDesiredCount *prometheus.GaugeVec
+	ecsRunningCount *prometheus.GaugeVec
 
-	reconcileTotal    *prometheus.CounterVec
-	scaleEventsTotal  *prometheus.CounterVec
-	cooldownSkipsTotal         prometheus.Counter
-	taskProtectionErrorsTotal  prometheus.Counter
+	reconcileTotal             *prometheus.CounterVec
+	scaleEventsTotal           *prometheus.CounterVec
+	cooldownSkipsTotal         *prometheus.CounterVec
+	taskProtectionErrorsTotal  *prometheus.CounterVec
 }
 
 // New creates a new Metrics instance with a custom registry.
@@ -31,46 +31,46 @@ func New() *Metrics {
 
 	m := &Metrics{
 		registry: reg,
-		pendingRuns: prometheus.NewGauge(prometheus.GaugeOpts{
+		pendingRuns: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "tfc_pending_runs",
 			Help: "Number of queued TFC runs.",
-		}),
-		busyAgents: prometheus.NewGauge(prometheus.GaugeOpts{
+		}, []string{"service"}),
+		busyAgents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "tfc_busy_agents",
 			Help: "Number of agents currently running jobs.",
-		}),
-		idleAgents: prometheus.NewGauge(prometheus.GaugeOpts{
+		}, []string{"service"}),
+		idleAgents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "tfc_idle_agents",
 			Help: "Number of available agents.",
-		}),
-		totalAgents: prometheus.NewGauge(prometheus.GaugeOpts{
+		}, []string{"service"}),
+		totalAgents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "tfc_total_agents",
 			Help: "Total number of agents in pool.",
-		}),
-		ecsDesiredCount: prometheus.NewGauge(prometheus.GaugeOpts{
+		}, []string{"service"}),
+		ecsDesiredCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ecs_desired_count",
 			Help: "ECS desired task count.",
-		}),
-		ecsRunningCount: prometheus.NewGauge(prometheus.GaugeOpts{
+		}, []string{"service"}),
+		ecsRunningCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ecs_running_count",
 			Help: "ECS running task count.",
-		}),
+		}, []string{"service"}),
 		reconcileTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "autoscaler_reconcile_total",
 			Help: "Total reconcile cycles.",
-		}, []string{"result"}),
+		}, []string{"service", "result"}),
 		scaleEventsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "autoscaler_scale_events_total",
 			Help: "Scaling actions taken.",
-		}, []string{"direction"}),
-		cooldownSkipsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"service", "direction"}),
+		cooldownSkipsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "autoscaler_cooldown_skips_total",
 			Help: "Scale-downs blocked by cooldown.",
-		}),
-		taskProtectionErrorsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"service"}),
+		taskProtectionErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "autoscaler_task_protection_errors_total",
 			Help: "Total task protection API failures.",
-		}),
+		}, []string{"service"}),
 	}
 
 	reg.MustRegister(
@@ -99,36 +99,100 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 }
 
-// RecordReconcile updates all gauge metrics with current values.
+// ForService returns a ServiceMetrics that records metrics with the given service label.
+func (m *Metrics) ForService(name string) *ServiceMetrics {
+	return &ServiceMetrics{
+		pendingRuns:     m.pendingRuns.WithLabelValues(name),
+		busyAgents:      m.busyAgents.WithLabelValues(name),
+		idleAgents:      m.idleAgents.WithLabelValues(name),
+		totalAgents:     m.totalAgents.WithLabelValues(name),
+		ecsDesiredCount: m.ecsDesiredCount.WithLabelValues(name),
+		ecsRunningCount: m.ecsRunningCount.WithLabelValues(name),
+		reconcileSuccess: m.reconcileTotal.WithLabelValues(name, "success"),
+		reconcileError:   m.reconcileTotal.WithLabelValues(name, "error"),
+		scaleUp:          m.scaleEventsTotal.WithLabelValues(name, "up"),
+		scaleDown:        m.scaleEventsTotal.WithLabelValues(name, "down"),
+		cooldownSkips:    m.cooldownSkipsTotal.WithLabelValues(name),
+		taskProtErrors:   m.taskProtectionErrorsTotal.WithLabelValues(name),
+	}
+}
+
+// RecordReconcile updates all gauge metrics with current values (default service).
 func (m *Metrics) RecordReconcile(busy, idle, total, pending, desired, running int) {
-	m.pendingRuns.Set(float64(pending))
-	m.busyAgents.Set(float64(busy))
-	m.idleAgents.Set(float64(idle))
-	m.totalAgents.Set(float64(total))
-	m.ecsDesiredCount.Set(float64(desired))
-	m.ecsRunningCount.Set(float64(running))
+	m.ForService("default").RecordReconcile(busy, idle, total, pending, desired, running)
+}
+
+// RecordReconcileResult increments the reconcile counter with success or error (default service).
+func (m *Metrics) RecordReconcileResult(success bool) {
+	m.ForService("default").RecordReconcileResult(success)
+}
+
+// RecordScaleEvent increments the scale events counter (default service).
+func (m *Metrics) RecordScaleEvent(direction string) {
+	m.ForService("default").RecordScaleEvent(direction)
+}
+
+// RecordCooldownSkip increments the cooldown skips counter (default service).
+func (m *Metrics) RecordCooldownSkip() {
+	m.ForService("default").RecordCooldownSkip()
+}
+
+// RecordTaskProtectionError increments the task protection error counter (default service).
+func (m *Metrics) RecordTaskProtectionError() {
+	m.ForService("default").RecordTaskProtectionError()
+}
+
+// ServiceMetrics records metrics for a specific service.
+type ServiceMetrics struct {
+	pendingRuns      prometheus.Gauge
+	busyAgents       prometheus.Gauge
+	idleAgents       prometheus.Gauge
+	totalAgents      prometheus.Gauge
+	ecsDesiredCount  prometheus.Gauge
+	ecsRunningCount  prometheus.Gauge
+	reconcileSuccess prometheus.Counter
+	reconcileError   prometheus.Counter
+	scaleUp          prometheus.Counter
+	scaleDown        prometheus.Counter
+	cooldownSkips    prometheus.Counter
+	taskProtErrors   prometheus.Counter
+}
+
+// RecordReconcile updates all gauge metrics with current values.
+func (sm *ServiceMetrics) RecordReconcile(busy, idle, total, pending, desired, running int) {
+	sm.pendingRuns.Set(float64(pending))
+	sm.busyAgents.Set(float64(busy))
+	sm.idleAgents.Set(float64(idle))
+	sm.totalAgents.Set(float64(total))
+	sm.ecsDesiredCount.Set(float64(desired))
+	sm.ecsRunningCount.Set(float64(running))
 }
 
 // RecordReconcileResult increments the reconcile counter with success or error.
-func (m *Metrics) RecordReconcileResult(success bool) {
+func (sm *ServiceMetrics) RecordReconcileResult(success bool) {
 	if success {
-		m.reconcileTotal.WithLabelValues("success").Inc()
+		sm.reconcileSuccess.Inc()
 	} else {
-		m.reconcileTotal.WithLabelValues("error").Inc()
+		sm.reconcileError.Inc()
 	}
 }
 
 // RecordScaleEvent increments the scale events counter.
-func (m *Metrics) RecordScaleEvent(direction string) {
-	m.scaleEventsTotal.WithLabelValues(direction).Inc()
+func (sm *ServiceMetrics) RecordScaleEvent(direction string) {
+	switch direction {
+	case "up":
+		sm.scaleUp.Inc()
+	case "down":
+		sm.scaleDown.Inc()
+	}
 }
 
 // RecordCooldownSkip increments the cooldown skips counter.
-func (m *Metrics) RecordCooldownSkip() {
-	m.cooldownSkipsTotal.Inc()
+func (sm *ServiceMetrics) RecordCooldownSkip() {
+	sm.cooldownSkips.Inc()
 }
 
 // RecordTaskProtectionError increments the task protection error counter.
-func (m *Metrics) RecordTaskProtectionError() {
-	m.taskProtectionErrorsTotal.Inc()
+func (sm *ServiceMetrics) RecordTaskProtectionError() {
+	sm.taskProtErrors.Inc()
 }

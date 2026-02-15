@@ -24,12 +24,12 @@ func TestRecordReconcile(t *testing.T) {
 	m := New()
 	m.RecordReconcile(3, 2, 5, 4, 6, 5)
 
-	assertGaugeValue(t, m.pendingRuns, 4)
-	assertGaugeValue(t, m.busyAgents, 3)
-	assertGaugeValue(t, m.idleAgents, 2)
-	assertGaugeValue(t, m.totalAgents, 5)
-	assertGaugeValue(t, m.ecsDesiredCount, 6)
-	assertGaugeValue(t, m.ecsRunningCount, 5)
+	assertGaugeVecValue(t, m.pendingRuns, "default", 4)
+	assertGaugeVecValue(t, m.busyAgents, "default", 3)
+	assertGaugeVecValue(t, m.idleAgents, "default", 2)
+	assertGaugeVecValue(t, m.totalAgents, "default", 5)
+	assertGaugeVecValue(t, m.ecsDesiredCount, "default", 6)
+	assertGaugeVecValue(t, m.ecsRunningCount, "default", 5)
 }
 
 func TestRecordReconcileSuccess(t *testing.T) {
@@ -38,8 +38,8 @@ func TestRecordReconcileSuccess(t *testing.T) {
 	m.RecordReconcileResult(true)
 	m.RecordReconcileResult(false)
 
-	assertCounterValue(t, m.reconcileTotal, "result", "success", 2)
-	assertCounterValue(t, m.reconcileTotal, "result", "error", 1)
+	assertCounterVecValue(t, m.reconcileTotal, "default", "success", 2)
+	assertCounterVecValue(t, m.reconcileTotal, "default", "error", 1)
 }
 
 func TestRecordScaleEvent(t *testing.T) {
@@ -48,8 +48,8 @@ func TestRecordScaleEvent(t *testing.T) {
 	m.RecordScaleEvent("up")
 	m.RecordScaleEvent("down")
 
-	assertCounterValue(t, m.scaleEventsTotal, "direction", "up", 2)
-	assertCounterValue(t, m.scaleEventsTotal, "direction", "down", 1)
+	assertCounterVecValue(t, m.scaleEventsTotal, "default", "up", 2)
+	assertCounterVecValue(t, m.scaleEventsTotal, "default", "down", 1)
 }
 
 func TestRecordCooldownSkip(t *testing.T) {
@@ -57,7 +57,7 @@ func TestRecordCooldownSkip(t *testing.T) {
 	m.RecordCooldownSkip()
 	m.RecordCooldownSkip()
 
-	assertPlainCounterValue(t, m.cooldownSkipsTotal, 2)
+	assertCounterVecSingleLabel(t, m.cooldownSkipsTotal, "default", 2)
 }
 
 func TestRecordTaskProtectionError(t *testing.T) {
@@ -65,7 +65,7 @@ func TestRecordTaskProtectionError(t *testing.T) {
 	m.RecordTaskProtectionError()
 	m.RecordTaskProtectionError()
 
-	assertPlainCounterValue(t, m.taskProtectionErrorsTotal, 2)
+	assertCounterVecSingleLabel(t, m.taskProtectionErrorsTotal, "default", 2)
 }
 
 func TestHTTPHandler(t *testing.T) {
@@ -103,23 +103,63 @@ func TestHTTPHandler(t *testing.T) {
 	}
 }
 
-func assertGaugeValue(t *testing.T, g prometheus.Gauge, want float64) {
+func TestForService(t *testing.T) {
+	m := New()
+	sm := m.ForService("spot")
+
+	sm.RecordReconcile(3, 2, 5, 4, 6, 5)
+	sm.RecordReconcileResult(true)
+	sm.RecordScaleEvent("up")
+	sm.RecordCooldownSkip()
+	sm.RecordTaskProtectionError()
+
+	assertGaugeVecValue(t, m.pendingRuns, "spot", 4)
+	assertGaugeVecValue(t, m.busyAgents, "spot", 3)
+	assertGaugeVecValue(t, m.idleAgents, "spot", 2)
+	assertGaugeVecValue(t, m.totalAgents, "spot", 5)
+	assertGaugeVecValue(t, m.ecsDesiredCount, "spot", 6)
+	assertGaugeVecValue(t, m.ecsRunningCount, "spot", 5)
+
+	assertCounterVecValue(t, m.reconcileTotal, "spot", "success", 1)
+	assertCounterVecValue(t, m.scaleEventsTotal, "spot", "up", 1)
+	assertCounterVecSingleLabel(t, m.cooldownSkipsTotal, "spot", 1)
+	assertCounterVecSingleLabel(t, m.taskProtectionErrorsTotal, "spot", 1)
+}
+
+func TestForServiceIsolation(t *testing.T) {
+	m := New()
+	regular := m.ForService("regular")
+	spot := m.ForService("spot")
+
+	regular.RecordReconcile(1, 0, 1, 2, 3, 3)
+	spot.RecordReconcile(4, 1, 5, 6, 7, 7)
+
+	assertGaugeVecValue(t, m.busyAgents, "regular", 1)
+	assertGaugeVecValue(t, m.busyAgents, "spot", 4)
+}
+
+func assertGaugeVecValue(t *testing.T, gv *prometheus.GaugeVec, service string, want float64) {
 	t.Helper()
+	g, err := gv.GetMetricWithLabelValues(service)
+	if err != nil {
+		t.Fatalf("getting gauge with service=%s: %v", service, err)
+	}
 	m := &io_prometheus_client.Metric{}
 	if err := g.Write(m); err != nil {
 		t.Fatalf("writing metric: %v", err)
 	}
 	got := m.GetGauge().GetValue()
 	if got != want {
-		t.Errorf("gauge value = %v, want %v", got, want)
+		t.Errorf("gauge(service=%s) = %v, want %v", service, got, want)
 	}
 }
 
-func assertCounterValue(t *testing.T, cv *prometheus.CounterVec, labelName, labelValue string, want float64) {
+// assertCounterVecValue asserts a counter in a 2-label CounterVec (service + another label).
+func assertCounterVecValue(t *testing.T, cv *prometheus.CounterVec, service, secondLabel string, want float64) {
 	t.Helper()
-	c, err := cv.GetMetricWithLabelValues(labelValue)
+	c, err := cv.GetMetricWithLabelValues(service, secondLabel)
 	if err != nil {
-		t.Fatalf("getting counter with label %s=%s: %v", labelName, labelValue, err)
+		t.Fatalf("getting counter with labels %s, %s: %v", service, secondLabel, err)
 	}
 	m := &io_prometheus_client.Metric{}
 	if err := c.Write(m); err != nil {
@@ -127,18 +167,23 @@ func assertCounterValue(t *testing.T, cv *prometheus.CounterVec, labelName, labe
 	}
 	got := m.GetCounter().GetValue()
 	if got != want {
-		t.Errorf("counter(%s=%s) = %v, want %v", labelName, labelValue, got, want)
+		t.Errorf("counter(%s, %s) = %v, want %v", service, secondLabel, got, want)
 	}
 }
 
-func assertPlainCounterValue(t *testing.T, c prometheus.Counter, want float64) {
+// assertCounterVecSingleLabel asserts a counter in a single-label CounterVec (service only).
+func assertCounterVecSingleLabel(t *testing.T, cv *prometheus.CounterVec, service string, want float64) {
 	t.Helper()
+	c, err := cv.GetMetricWithLabelValues(service)
+	if err != nil {
+		t.Fatalf("getting counter with service=%s: %v", service, err)
+	}
 	m := &io_prometheus_client.Metric{}
 	if err := c.Write(m); err != nil {
 		t.Fatalf("writing metric: %v", err)
 	}
 	got := m.GetCounter().GetValue()
 	if got != want {
-		t.Errorf("counter = %v, want %v", got, want)
+		t.Errorf("counter(service=%s) = %v, want %v", service, got, want)
 	}
 }

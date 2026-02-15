@@ -136,6 +136,47 @@ func TestMetricsEndpointNotRegisteredWithoutOption(t *testing.T) {
 	}
 }
 
+func TestCompositeProbeAllReady(t *testing.T) {
+	ch1 := make(chan struct{})
+	ch2 := make(chan struct{})
+	close(ch1)
+	close(ch2)
+
+	probe := NewCompositeProbe(NewChannelProbe(ch1), NewChannelProbe(ch2))
+	if !probe.IsReady() {
+		t.Fatal("expected ready when all sub-probes are ready")
+	}
+}
+
+func TestCompositeProbeOneNotReady(t *testing.T) {
+	ch1 := make(chan struct{})
+	ch2 := make(chan struct{})
+	close(ch1)
+	// ch2 not closed
+
+	probe := NewCompositeProbe(NewChannelProbe(ch1), NewChannelProbe(ch2))
+	if probe.IsReady() {
+		t.Fatal("expected not ready when one sub-probe is not ready")
+	}
+}
+
+func TestCompositeProbeNoneReady(t *testing.T) {
+	ch1 := make(chan struct{})
+	ch2 := make(chan struct{})
+
+	probe := NewCompositeProbe(NewChannelProbe(ch1), NewChannelProbe(ch2))
+	if probe.IsReady() {
+		t.Fatal("expected not ready when no sub-probes are ready")
+	}
+}
+
+func TestCompositeProbeEmpty(t *testing.T) {
+	probe := NewCompositeProbe()
+	if !probe.IsReady() {
+		t.Fatal("expected ready when no sub-probes (vacuous truth)")
+	}
+}
+
 func TestServerRunAndShutdown(t *testing.T) {
 	srv := NewServer("127.0.0.1:0", &AtomicReady{})
 
