@@ -17,6 +17,14 @@ The autoscaler runs a reconciliation loop on a configurable interval:
 
 Agent-to-task correlation uses IP matching: TFC agents expose their IP, and Fargate tasks each get a private IP via their ENI. The autoscaler matches these to determine which tasks are busy or idle.
 
+## Dual-Service Mode (FARGATE_SPOT)
+
+The autoscaler supports an optional dual-service mode that runs short-lived TFC jobs (plan, policy check, assessment) on FARGATE_SPOT while keeping long-running jobs (apply, stack_apply) on regular FARGATE. Plan-type jobs typically complete well within the 2-minute spot termination warning, making them safe candidates for spot pricing.
+
+When enabled, the autoscaler creates two independent Scaler instances ("regular" and "spot"), each managing its own ECS service with its own min/max bounds, cooldown state, idle guard, and task protection. Both services register agents into the same TFC agent pool. A `ServiceView` layer filters agents and pending runs per-service using IP-based correlation against ECS task IPs.
+
+Dual-service mode is opt-in via the `ECS_SPOT_SERVICE` environment variable. When not set, behavior is identical to single-service mode.
+
 ## Configuration
 
 All configuration is via environment variables.
@@ -35,15 +43,25 @@ All configuration is via environment variables.
 | `MAX_AGENTS` | No | `10` | Maximum number of agents allowed |
 | `HEALTH_ADDR` | No | `:8080` | Address for health/metrics server |
 
+### Dual-Service Mode
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `ECS_SPOT_SERVICE` | No | | Spot ECS service name (enables dual-service mode) |
+| `SPOT_MIN_AGENTS` | No | `0` | Minimum agents for the spot service |
+| `SPOT_MAX_AGENTS` | No | `10` | Maximum agents for the spot service |
+
 ## Endpoints
 
 The health server (default `:8080`) exposes:
 
 - `/healthz` — Liveness probe (always returns 200)
-- `/readyz` — Readiness probe (returns 200 after the first successful reconciliation)
+- `/readyz` — Readiness probe (returns 200 after the first successful reconciliation; in dual-service mode, requires both scalers to be ready)
 - `/metrics` — Prometheus metrics
 
 ## Metrics
+
+All metrics carry a `service` label (`"default"` in single-service mode, `"regular"` / `"spot"` in dual-service mode).
 
 | Metric | Type | Description |
 |---|---|---|
@@ -88,6 +106,21 @@ export ECS_SERVICE="tfc-agent"
 ./autoscaler
 ```
 
+### With Dual-Service Mode
+
+```sh
+export TFC_TOKEN="your-token"
+export TFC_AGENT_POOL_ID="apool-xxx"
+export TFC_ORG="your-org"
+export ECS_CLUSTER="your-cluster"
+export ECS_SERVICE="tfc-agent"
+export ECS_SPOT_SERVICE="tfc-agent-spot"
+export SPOT_MIN_AGENTS=0
+export SPOT_MAX_AGENTS=10
+
+./autoscaler
+```
+
 ### Docker
 
 ```sh
@@ -115,8 +148,8 @@ cmd/autoscaler/        Entry point
 internal/
   config/              Environment variable configuration
   ecs/                 ECS client (service status, scaling, task protection)
-  health/              Health check and metrics HTTP server
-  metrics/             Prometheus metrics
+  health/              Health check and metrics HTTP server (CompositeProbe for dual-service)
+  metrics/             Prometheus metrics (service-labeled gauges/counters)
   scaler/              Autoscaling decision engine
-  tfc/                 Terraform Cloud client (agents, pending runs)
+  tfc/                 Terraform Cloud client (agents, pending runs, ServiceView filtering)
 ```
