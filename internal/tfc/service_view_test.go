@@ -2,7 +2,7 @@ package tfc
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 )
 
@@ -161,7 +161,7 @@ func TestServiceViewGetAgentDetails(t *testing.T) {
 func TestServiceViewGetPendingRunsError(t *testing.T) {
 	sv := NewServiceView(&mockServiceViewClient{
 		pendingRunsByTypeFn: func(_ context.Context) (PendingRunCounts, error) {
-			return PendingRunCounts{}, fmt.Errorf("api error")
+			return PendingRunCounts{}, errors.New("api error")
 		},
 	}, RunTypePlan, nil)
 

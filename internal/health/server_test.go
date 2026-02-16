@@ -107,7 +107,7 @@ func TestChannelProbeReadyIdempotent(t *testing.T) {
 func TestMetricsEndpoint(t *testing.T) {
 	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("# HELP test_metric A test metric\n"))
+		_, _ = w.Write([]byte("# HELP test_metric A test metric\n"))
 	})
 
 	srv := NewServer(":0", &AtomicReady{}, WithMetricsHandler(metricsHandler))

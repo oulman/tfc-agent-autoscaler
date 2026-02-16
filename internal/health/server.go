@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
 // ReadinessProbe reports whether the application is ready to serve traffic.
@@ -93,17 +94,17 @@ func NewServer(addr string, probe ReadinessProbe, opts ...ServerOption) *Server 
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok\n"))
+		_, _ = w.Write([]byte("ok\n"))
 	})
 
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		if probe.IsReady() {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ok\n"))
+			_, _ = w.Write([]byte("ok\n"))
 			return
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("not ready\n"))
+		_, _ = w.Write([]byte("not ready\n"))
 	})
 
 	s := &Server{
@@ -124,7 +125,8 @@ func NewServer(addr string, probe ReadinessProbe, opts ...ServerOption) *Server 
 // Run starts the HTTP server and blocks until the context is canceled,
 // then gracefully shuts down.
 func (s *Server) Run(ctx context.Context) error {
-	ln, err := net.Listen("tcp", s.httpServer.Addr)
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(ctx, "tcp", s.httpServer.Addr)
 	if err != nil {
 		return err
 	}
@@ -137,7 +139,9 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		if err := s.httpServer.Shutdown(context.Background()); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck // intentional fresh context for graceful shutdown
+		defer cancel()
+		if err := s.httpServer.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdownCtx is derived from Background intentionally
 			return err
 		}
 		// Drain the serve error (http.ErrServerClosed is expected).

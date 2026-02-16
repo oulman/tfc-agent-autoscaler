@@ -192,7 +192,7 @@ func (c *Client) countRunsForWorkspace(ctx context.Context, workspaceID, statuse
 	}
 
 	if runs.Pagination != nil {
-		return runs.Pagination.TotalCount, nil
+		return runs.TotalCount, nil
 	}
 	return len(runs.Items), nil
 }

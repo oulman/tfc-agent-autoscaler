@@ -11,7 +11,7 @@ import (
 )
 
 // API is the subset of the ECS API the autoscaler needs.
-type API interface {
+type API interface { //nolint:dupl // mock in test file mirrors this interface by design
 	DescribeServices(ctx context.Context, input *ecs.DescribeServicesInput, opts ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error)
 	UpdateService(ctx context.Context, input *ecs.UpdateServiceInput, opts ...func(*ecs.Options)) (*ecs.UpdateServiceOutput, error)
 	ListTasks(ctx context.Context, input *ecs.ListTasksInput, opts ...func(*ecs.Options)) (*ecs.ListTasksOutput, error)
@@ -129,9 +129,9 @@ func (c *Client) SetTaskProtection(ctx context.Context, taskArns []string, enabl
 		}
 
 		input := &ecs.UpdateTaskProtectionInput{
-			Cluster:            aws.String(c.cluster),
-			Tasks:              taskArns[i:end],
-			ProtectionEnabled:  enabled,
+			Cluster:           aws.String(c.cluster),
+			Tasks:             taskArns[i:end],
+			ProtectionEnabled: enabled,
 		}
 		if enabled && expiresInMinutes > 0 {
 			input.ExpiresInMinutes = aws.Int32(expiresInMinutes)

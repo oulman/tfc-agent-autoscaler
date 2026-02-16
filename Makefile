@@ -17,9 +17,9 @@ build:
 docker:
 	docker build -t $(IMAGE):$(TAG) .
 
-## lint: run go vet
+## lint: run golangci-lint
 lint:
-	go vet ./...
+	golangci-lint run ./...
 
 ## clean: remove build artifacts
 clean:

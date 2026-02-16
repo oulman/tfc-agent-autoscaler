@@ -19,10 +19,10 @@ type Metrics struct {
 	ecsDesiredCount *prometheus.GaugeVec
 	ecsRunningCount *prometheus.GaugeVec
 
-	reconcileTotal             *prometheus.CounterVec
-	scaleEventsTotal           *prometheus.CounterVec
-	cooldownSkipsTotal         *prometheus.CounterVec
-	taskProtectionErrorsTotal  *prometheus.CounterVec
+	reconcileTotal            *prometheus.CounterVec
+	scaleEventsTotal          *prometheus.CounterVec
+	cooldownSkipsTotal        *prometheus.CounterVec
+	taskProtectionErrorsTotal *prometheus.CounterVec
 }
 
 // New creates a new Metrics instance with a custom registry.
@@ -102,12 +102,12 @@ func (m *Metrics) Handler() http.Handler {
 // ForService returns a ServiceMetrics that records metrics with the given service label.
 func (m *Metrics) ForService(name string) *ServiceMetrics {
 	return &ServiceMetrics{
-		pendingRuns:     m.pendingRuns.WithLabelValues(name),
-		busyAgents:      m.busyAgents.WithLabelValues(name),
-		idleAgents:      m.idleAgents.WithLabelValues(name),
-		totalAgents:     m.totalAgents.WithLabelValues(name),
-		ecsDesiredCount: m.ecsDesiredCount.WithLabelValues(name),
-		ecsRunningCount: m.ecsRunningCount.WithLabelValues(name),
+		pendingRuns:      m.pendingRuns.WithLabelValues(name),
+		busyAgents:       m.busyAgents.WithLabelValues(name),
+		idleAgents:       m.idleAgents.WithLabelValues(name),
+		totalAgents:      m.totalAgents.WithLabelValues(name),
+		ecsDesiredCount:  m.ecsDesiredCount.WithLabelValues(name),
+		ecsRunningCount:  m.ecsRunningCount.WithLabelValues(name),
 		reconcileSuccess: m.reconcileTotal.WithLabelValues(name, "success"),
 		reconcileError:   m.reconcileTotal.WithLabelValues(name, "error"),
 		scaleUp:          m.scaleEventsTotal.WithLabelValues(name, "up"),
