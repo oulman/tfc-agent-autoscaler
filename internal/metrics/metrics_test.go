@@ -1,4 +1,4 @@
-package metrics
+package metrics //nolint:revive // metrics is the correct domain name despite runtime/metrics in stdlib
 
 import (
 	"net/http"

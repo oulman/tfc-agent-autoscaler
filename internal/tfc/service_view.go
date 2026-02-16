@@ -8,8 +8,9 @@ import (
 // RunType identifies whether a ServiceView handles plan or apply runs.
 type RunType int
 
+// RunTypePlan and RunTypeApply distinguish plan-only vs apply-only service views.
 const (
-	RunTypePlan  RunType = iota
+	RunTypePlan RunType = iota
 	RunTypeApply
 )
 

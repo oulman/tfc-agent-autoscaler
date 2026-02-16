@@ -34,12 +34,12 @@ func (m *mockTFC) GetAgentDetails(ctx context.Context) ([]tfc.AgentInfo, error) 
 }
 
 type mockECS struct {
-	serviceStatusFn    func(ctx context.Context) (int32, int32, error)
-	setDesiredFn       func(ctx context.Context, count int32) error
-	getTaskIPsFn       func(ctx context.Context) ([]ecs.TaskInfo, error)
-	setTaskProtFn      func(ctx context.Context, taskArns []string, enabled bool, expiresInMinutes int32) error
-	lastDesiredCount   int32
-	protectCalls       []protectCall
+	serviceStatusFn  func(ctx context.Context) (int32, int32, error)
+	setDesiredFn     func(ctx context.Context, count int32) error
+	getTaskIPsFn     func(ctx context.Context) ([]ecs.TaskInfo, error)
+	setTaskProtFn    func(ctx context.Context, taskArns []string, enabled bool, expiresInMinutes int32) error
+	lastDesiredCount int32
+	protectCalls     []protectCall
 }
 
 type protectCall struct {
@@ -314,7 +314,7 @@ func TestRunSignalsReadyAfterFirstSuccess(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go s.Run(ctx)
+	go func() { _ = s.Run(ctx) }()
 
 	select {
 	case <-s.Ready():
@@ -347,7 +347,7 @@ func TestRunDoesNotSignalReadyOnPersistentError(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go s.Run(ctx)
+	go func() { _ = s.Run(ctx) }()
 
 	// Give a few poll cycles for it to try.
 	time.Sleep(200 * time.Millisecond)
@@ -382,7 +382,7 @@ func TestReadyChannelIsIdempotent(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go s.Run(ctx)
+	go func() { _ = s.Run(ctx) }()
 
 	<-s.Ready()
 
@@ -418,7 +418,7 @@ func TestReadyConcurrentAccess(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go s.Run(ctx)
+	go func() { _ = s.Run(ctx) }()
 
 	// Multiple goroutines waiting on Ready should all unblock.
 	var wg sync.WaitGroup
@@ -446,18 +446,18 @@ func TestReadyConcurrentAccess(t *testing.T) {
 }
 
 type fakeMetrics struct {
-	reconcileCalls        int
-	lastBusy              int
-	lastIdle              int
-	lastTotal             int
-	lastPending           int
-	lastDesired           int
-	lastRunning           int
-	resultCalls           int
-	lastSuccess           bool
-	scaleEvents           []string
-	cooldownSkips         int
-	taskProtectionErrors  int
+	reconcileCalls       int
+	lastBusy             int
+	lastIdle             int
+	lastTotal            int
+	lastPending          int
+	lastDesired          int
+	lastRunning          int
+	resultCalls          int
+	lastSuccess          bool
+	scaleEvents          []string
+	cooldownSkips        int
+	taskProtectionErrors int
 }
 
 func (f *fakeMetrics) RecordReconcile(busy, idle, total, pending, desired, running int) {

@@ -157,49 +157,11 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 
 	// Scale-up always proceeds immediately. Scale-down respects cooldown and idle guard.
 	if desiredInt32 < currentDesired {
-		if !s.lastScaleTime.IsZero() && time.Since(s.lastScaleTime) < s.cooldown {
-			s.logger.Info("scale-down skipped due to cooldown",
-				"scaler", s.name,
-				"last_scale", s.lastScaleTime,
-				"cooldown_remaining", s.cooldown-time.Since(s.lastScaleTime),
-			)
-			if s.metrics != nil {
-				s.metrics.RecordCooldownSkip()
-			}
-			s.recordResult(true)
+		adjusted, done := s.applyScaleDownGuards(ctx, desired, idle, currentDesired)
+		if done {
 			return nil
 		}
-
-		// Idle guard: never scale down by more than the number of idle agents.
-		scaleDownBy := int(currentDesired) - desired
-		if idle < scaleDownBy {
-			scaleDownBy = idle
-		}
-		desiredInt32 = currentDesired - int32(scaleDownBy)
-
-		s.logger.Info("idle guard applied",
-			"scaler", s.name,
-			"computed_desired", desired,
-			"idle_agents", idle,
-			"scale_down_by", scaleDownBy,
-			"guarded_desired", desiredInt32,
-		)
-
-		if desiredInt32 == currentDesired {
-			s.recordResult(true)
-			return nil
-		}
-
-		// Task protection: protect busy tasks before scaling down.
-		if err := s.protectBusyTasks(ctx); err != nil {
-			s.logger.Warn("task protection failed, proceeding with idle-guarded scale-down",
-				"scaler", s.name,
-				"error", err,
-			)
-			if s.metrics != nil {
-				s.metrics.RecordTaskProtectionError()
-			}
-		}
+		desiredInt32 = adjusted
 	}
 
 	direction := "up"
@@ -225,6 +187,56 @@ func (s *Scaler) Reconcile(ctx context.Context) error {
 	s.lastScaleTime = time.Now()
 	s.recordResult(true)
 	return nil
+}
+
+// applyScaleDownGuards checks cooldown and idle guard before scaling down.
+// It returns the adjusted desired count and true if scaling should be skipped entirely.
+func (s *Scaler) applyScaleDownGuards(ctx context.Context, desired, idle int, currentDesired int32) (int32, bool) {
+	if !s.lastScaleTime.IsZero() && time.Since(s.lastScaleTime) < s.cooldown {
+		s.logger.Info("scale-down skipped due to cooldown",
+			"scaler", s.name,
+			"last_scale", s.lastScaleTime,
+			"cooldown_remaining", s.cooldown-time.Since(s.lastScaleTime),
+		)
+		if s.metrics != nil {
+			s.metrics.RecordCooldownSkip()
+		}
+		s.recordResult(true)
+		return 0, true
+	}
+
+	// Idle guard: never scale down by more than the number of idle agents.
+	scaleDownBy := int(currentDesired) - desired
+	if idle < scaleDownBy {
+		scaleDownBy = idle
+	}
+	adjusted := currentDesired - int32(scaleDownBy)
+
+	s.logger.Info("idle guard applied",
+		"scaler", s.name,
+		"computed_desired", desired,
+		"idle_agents", idle,
+		"scale_down_by", scaleDownBy,
+		"guarded_desired", adjusted,
+	)
+
+	if adjusted == currentDesired {
+		s.recordResult(true)
+		return 0, true
+	}
+
+	// Task protection: protect busy tasks before scaling down.
+	if err := s.protectBusyTasks(ctx); err != nil {
+		s.logger.Warn("task protection failed, proceeding with idle-guarded scale-down",
+			"scaler", s.name,
+			"error", err,
+		)
+		if s.metrics != nil {
+			s.metrics.RecordTaskProtectionError()
+		}
+	}
+
+	return adjusted, false
 }
 
 // protectBusyTasks correlates TFC agents with ECS tasks by IP and sets

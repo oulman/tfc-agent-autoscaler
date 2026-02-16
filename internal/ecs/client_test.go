@@ -11,10 +11,10 @@ import (
 )
 
 type mockECSAPI struct {
-	describeServicesFn    func(ctx context.Context, input *ecs.DescribeServicesInput, opts ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error)
-	updateServiceFn       func(ctx context.Context, input *ecs.UpdateServiceInput, opts ...func(*ecs.Options)) (*ecs.UpdateServiceOutput, error)
-	listTasksFn           func(ctx context.Context, input *ecs.ListTasksInput, opts ...func(*ecs.Options)) (*ecs.ListTasksOutput, error)
-	describeTasksFn       func(ctx context.Context, input *ecs.DescribeTasksInput, opts ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
+	describeServicesFn     func(ctx context.Context, input *ecs.DescribeServicesInput, opts ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error)
+	updateServiceFn        func(ctx context.Context, input *ecs.UpdateServiceInput, opts ...func(*ecs.Options)) (*ecs.UpdateServiceOutput, error)
+	listTasksFn            func(ctx context.Context, input *ecs.ListTasksInput, opts ...func(*ecs.Options)) (*ecs.ListTasksOutput, error)
+	describeTasksFn        func(ctx context.Context, input *ecs.DescribeTasksInput, opts ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
 	updateTaskProtectionFn func(ctx context.Context, input *ecs.UpdateTaskProtectionInput, opts ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error)
 }
 
@@ -37,6 +37,11 @@ func (m *mockECSAPI) DescribeTasks(ctx context.Context, input *ecs.DescribeTasks
 func (m *mockECSAPI) UpdateTaskProtection(ctx context.Context, input *ecs.UpdateTaskProtectionInput, opts ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error) {
 	return m.updateTaskProtectionFn(ctx, input, opts...)
 }
+
+const (
+	testCluster = "my-cluster"
+	testService = "tfc-agent"
+)
 
 func TestGetServiceStatus(t *testing.T) {
 	tests := []struct {
@@ -90,8 +95,8 @@ func TestGetServiceStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Client{
-				cluster: "my-cluster",
-				service: "tfc-agent",
+				cluster: testCluster,
+				service: testService,
 				api: &mockECSAPI{
 					describeServicesFn: func(_ context.Context, _ *ecs.DescribeServicesInput, _ ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error) {
 						if tt.err != nil {
@@ -145,8 +150,8 @@ func TestSetDesiredCount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedInput *ecs.UpdateServiceInput
 			c := &Client{
-				cluster: "my-cluster",
-				service: "tfc-agent",
+				cluster: testCluster,
+				service: testService,
 				api: &mockECSAPI{
 					updateServiceFn: func(_ context.Context, input *ecs.UpdateServiceInput, _ ...func(*ecs.Options)) (*ecs.UpdateServiceOutput, error) {
 						capturedInput = input
@@ -169,10 +174,10 @@ func TestSetDesiredCount(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if *capturedInput.Cluster != "my-cluster" {
+			if *capturedInput.Cluster != testCluster {
 				t.Errorf("cluster: got %s, want my-cluster", *capturedInput.Cluster)
 			}
-			if *capturedInput.Service != "tfc-agent" {
+			if *capturedInput.Service != testService {
 				t.Errorf("service: got %s, want tfc-agent", *capturedInput.Service)
 			}
 			if *capturedInput.DesiredCount != tt.count {
@@ -184,13 +189,13 @@ func TestSetDesiredCount(t *testing.T) {
 
 func TestGetTaskIPs(t *testing.T) {
 	tests := []struct {
-		name        string
-		listOut     *ecs.ListTasksOutput
-		listErr     error
-		descOut     *ecs.DescribeTasksOutput
-		descErr     error
-		want        []TaskInfo
-		wantErr     bool
+		name         string
+		listOut      *ecs.ListTasksOutput
+		listErr      error
+		descOut      *ecs.DescribeTasksOutput
+		descErr      error
+		want         []TaskInfo
+		wantErr      bool
 		wantDescribe bool // whether DescribeTasks should be called
 	}{
 		{
@@ -277,14 +282,14 @@ func TestGetTaskIPs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			describeCalled := false
 			c := &Client{
-				cluster: "my-cluster",
-				service: "tfc-agent",
+				cluster: testCluster,
+				service: testService,
 				api: &mockECSAPI{
 					listTasksFn: func(_ context.Context, input *ecs.ListTasksInput, _ ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
-						if *input.Cluster != "my-cluster" {
+						if *input.Cluster != testCluster {
 							t.Errorf("ListTasks cluster: got %s, want my-cluster", *input.Cluster)
 						}
-						if *input.ServiceName != "tfc-agent" {
+						if *input.ServiceName != testService {
 							t.Errorf("ListTasks service: got %s, want tfc-agent", *input.ServiceName)
 						}
 						if tt.listErr != nil {
@@ -294,7 +299,7 @@ func TestGetTaskIPs(t *testing.T) {
 					},
 					describeTasksFn: func(_ context.Context, input *ecs.DescribeTasksInput, _ ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
 						describeCalled = true
-						if *input.Cluster != "my-cluster" {
+						if *input.Cluster != testCluster {
 							t.Errorf("DescribeTasks cluster: got %s, want my-cluster", *input.Cluster)
 						}
 						if tt.descErr != nil {
@@ -337,8 +342,8 @@ func TestSetTaskProtection(t *testing.T) {
 	t.Run("single batch", func(t *testing.T) {
 		var calls []*ecs.UpdateTaskProtectionInput
 		c := &Client{
-			cluster: "my-cluster",
-			service: "tfc-agent",
+			cluster: testCluster,
+			service: testService,
 			api: &mockECSAPI{
 				updateTaskProtectionFn: func(_ context.Context, input *ecs.UpdateTaskProtectionInput, _ ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error) {
 					calls = append(calls, input)
@@ -355,7 +360,7 @@ func TestSetTaskProtection(t *testing.T) {
 		if len(calls) != 1 {
 			t.Fatalf("API calls: got %d, want 1", len(calls))
 		}
-		if *calls[0].Cluster != "my-cluster" {
+		if *calls[0].Cluster != testCluster {
 			t.Errorf("cluster: got %s, want my-cluster", *calls[0].Cluster)
 		}
 		if len(calls[0].Tasks) != 3 {
@@ -372,8 +377,8 @@ func TestSetTaskProtection(t *testing.T) {
 	t.Run("multiple batches", func(t *testing.T) {
 		var calls []*ecs.UpdateTaskProtectionInput
 		c := &Client{
-			cluster: "my-cluster",
-			service: "tfc-agent",
+			cluster: testCluster,
+			service: testService,
 			api: &mockECSAPI{
 				updateTaskProtectionFn: func(_ context.Context, input *ecs.UpdateTaskProtectionInput, _ ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error) {
 					calls = append(calls, input)
@@ -407,8 +412,8 @@ func TestSetTaskProtection(t *testing.T) {
 	t.Run("empty task list", func(t *testing.T) {
 		callCount := 0
 		c := &Client{
-			cluster: "my-cluster",
-			service: "tfc-agent",
+			cluster: testCluster,
+			service: testService,
 			api: &mockECSAPI{
 				updateTaskProtectionFn: func(_ context.Context, _ *ecs.UpdateTaskProtectionInput, _ ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error) {
 					callCount++
@@ -428,8 +433,8 @@ func TestSetTaskProtection(t *testing.T) {
 
 	t.Run("API error", func(t *testing.T) {
 		c := &Client{
-			cluster: "my-cluster",
-			service: "tfc-agent",
+			cluster: testCluster,
+			service: testService,
 			api: &mockECSAPI{
 				updateTaskProtectionFn: func(_ context.Context, _ *ecs.UpdateTaskProtectionInput, _ ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error) {
 					return nil, errors.New("access denied")
@@ -446,8 +451,8 @@ func TestSetTaskProtection(t *testing.T) {
 	t.Run("disabled protection omits ExpiresInMinutes", func(t *testing.T) {
 		var captured *ecs.UpdateTaskProtectionInput
 		c := &Client{
-			cluster: "my-cluster",
-			service: "tfc-agent",
+			cluster: testCluster,
+			service: testService,
 			api: &mockECSAPI{
 				updateTaskProtectionFn: func(_ context.Context, input *ecs.UpdateTaskProtectionInput, _ ...func(*ecs.Options)) (*ecs.UpdateTaskProtectionOutput, error) {
 					captured = input

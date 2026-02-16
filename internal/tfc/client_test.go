@@ -2,7 +2,7 @@ package tfc
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/hashicorp/go-tfe"
@@ -151,7 +151,7 @@ func TestGetAgentDetails(t *testing.T) {
 		{
 			name: "API error",
 			listFn: func(_ context.Context, _ string, _ *tfe.AgentListOptions) (*tfe.AgentList, error) {
-				return nil, fmt.Errorf("api failure")
+				return nil, errors.New("api failure")
 			},
 			wantErr: true,
 		},
@@ -212,12 +212,12 @@ func TestGetAgentDetails(t *testing.T) {
 
 func TestGetPendingRunsByType(t *testing.T) {
 	tests := []struct {
-		name            string
-		workspaces      []*tfe.Workspace
-		runsPerStatus   map[string]map[string]int // wsID -> status filter -> count
-		wantPlanPending int
+		name             string
+		workspaces       []*tfe.Workspace
+		runsPerStatus    map[string]map[string]int // wsID -> status filter -> count
+		wantPlanPending  int
 		wantApplyPending int
-		wantErr         bool
+		wantErr          bool
 	}{
 		{
 			name: "mixed plan and apply pending",
@@ -253,9 +253,9 @@ func TestGetPendingRunsByType(t *testing.T) {
 			wantApplyPending: 2,
 		},
 		{
-			name:       "no workspaces",
-			workspaces: nil,
-			runsPerStatus: map[string]map[string]int{},
+			name:             "no workspaces",
+			workspaces:       nil,
+			runsPerStatus:    map[string]map[string]int{},
 			wantPlanPending:  0,
 			wantApplyPending: 0,
 		},
