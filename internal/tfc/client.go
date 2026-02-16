@@ -105,13 +105,12 @@ func (c *Client) GetAgentPoolStatus(ctx context.Context) (busy, idle, total int,
 		}
 
 		for _, agent := range agents.Items {
+			total++
 			switch agent.Status {
 			case "busy":
 				busy++
-				total++
 			case "idle":
 				idle++
-				total++
 			}
 		}
 
