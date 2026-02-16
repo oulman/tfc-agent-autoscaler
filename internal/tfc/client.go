@@ -105,12 +105,13 @@ func (c *Client) GetAgentPoolStatus(ctx context.Context) (busy, idle, total int,
 		}
 
 		for _, agent := range agents.Items {
-			total++
 			switch agent.Status {
 			case "busy":
 				busy++
+				total++
 			case "idle":
 				idle++
+				total++
 			}
 		}
 
@@ -184,15 +185,25 @@ func (c *Client) GetPendingRuns(ctx context.Context) (int, error) {
 }
 
 func (c *Client) countRunsForWorkspace(ctx context.Context, workspaceID, statuses string) (int, error) {
-	runs, err := c.runs.List(ctx, workspaceID, &tfe.RunListOptions{
-		Status: statuses,
-	})
-	if err != nil {
-		return 0, err
+	opts := &tfe.RunListOptions{
+		Status:      statuses,
+		ListOptions: tfe.ListOptions{PageSize: 100},
 	}
 
-	if runs.Pagination != nil {
-		return runs.TotalCount, nil
+	var total int
+	for {
+		runs, err := c.runs.List(ctx, workspaceID, opts)
+		if err != nil {
+			return 0, err
+		}
+
+		total += len(runs.Items)
+
+		if runs.Pagination == nil || runs.CurrentPage >= runs.TotalPages {
+			break
+		}
+		opts.PageNumber = runs.NextPage
 	}
-	return len(runs.Items), nil
+
+	return total, nil
 }

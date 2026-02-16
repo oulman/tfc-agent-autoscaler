@@ -66,12 +66,13 @@ func (sv *ServiceView) GetAgentPoolStatus(ctx context.Context) (busy, idle, tota
 	}
 
 	for _, agent := range agents {
-		total++
 		switch agent.Status {
 		case "busy":
 			busy++
+			total++
 		case "idle":
 			idle++
+			total++
 		}
 	}
 
