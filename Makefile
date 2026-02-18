@@ -19,7 +19,7 @@ docker:
 
 ## lint: run golangci-lint
 lint:
-	golangci-lint run ./...
+	golangci-lint cache clean && golangci-lint run ./...
 
 ## clean: remove build artifacts
 clean:
