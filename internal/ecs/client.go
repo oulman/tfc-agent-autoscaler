@@ -80,39 +80,58 @@ func (c *Client) SetDesiredCount(ctx context.Context, count int32) error {
 
 // GetTaskIPs returns the ARN and private IP of each task in the service.
 func (c *Client) GetTaskIPs(ctx context.Context) ([]TaskInfo, error) {
-	listOut, err := c.api.ListTasks(ctx, &ecs.ListTasksInput{
+	var allArns []string
+	input := &ecs.ListTasksInput{
 		Cluster:     aws.String(c.cluster),
 		ServiceName: aws.String(c.service),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing tasks: %w", err)
 	}
 
-	if len(listOut.TaskArns) == 0 {
+	for {
+		listOut, err := c.api.ListTasks(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("listing tasks: %w", err)
+		}
+		allArns = append(allArns, listOut.TaskArns...)
+
+		if listOut.NextToken == nil {
+			break
+		}
+		input.NextToken = listOut.NextToken
+	}
+
+	if len(allArns) == 0 {
 		return nil, nil
 	}
 
-	descOut, err := c.api.DescribeTasks(ctx, &ecs.DescribeTasksInput{
-		Cluster: aws.String(c.cluster),
-		Tasks:   listOut.TaskArns,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("describing tasks: %w", err)
-	}
-
+	const descBatchSize = 100
 	var tasks []TaskInfo
-	for _, task := range descOut.Tasks {
-		info := TaskInfo{TaskArn: aws.ToString(task.TaskArn)}
-		for _, att := range task.Attachments {
-			if aws.ToString(att.Type) == "ElasticNetworkInterface" {
-				for _, detail := range att.Details {
-					if aws.ToString(detail.Name) == "privateIPv4Address" {
-						info.PrivateIP = aws.ToString(detail.Value)
+	for i := 0; i < len(allArns); i += descBatchSize {
+		end := i + descBatchSize
+		if end > len(allArns) {
+			end = len(allArns)
+		}
+
+		descOut, err := c.api.DescribeTasks(ctx, &ecs.DescribeTasksInput{
+			Cluster: aws.String(c.cluster),
+			Tasks:   allArns[i:end],
+		})
+		if err != nil {
+			return nil, fmt.Errorf("describing tasks: %w", err)
+		}
+
+		for _, task := range descOut.Tasks {
+			info := TaskInfo{TaskArn: aws.ToString(task.TaskArn)}
+			for _, att := range task.Attachments {
+				if aws.ToString(att.Type) == "ElasticNetworkInterface" {
+					for _, detail := range att.Details {
+						if aws.ToString(detail.Name) == "privateIPv4Address" {
+							info.PrivateIP = aws.ToString(detail.Value)
+						}
 					}
 				}
 			}
+			tasks = append(tasks, info)
 		}
-		tasks = append(tasks, info)
 	}
 
 	return tasks, nil

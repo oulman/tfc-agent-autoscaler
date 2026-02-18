@@ -109,8 +109,12 @@ func NewServer(addr string, probe ReadinessProbe, opts ...ServerOption) *Server 
 
 	s := &Server{
 		httpServer: &http.Server{
-			Addr:    addr,
-			Handler: mux,
+			Addr:              addr,
+			Handler:           mux,
+			ReadTimeout:       5 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       60 * time.Second,
 		},
 		handler: mux,
 	}

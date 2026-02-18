@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -68,8 +69,12 @@ func runSingleService(ctx context.Context, logger *slog.Logger, cfg config.Confi
 		}
 	}()
 
-	if err := s.Run(ctx); err != nil && ctx.Err() != nil {
-		logger.Info("autoscaler stopped", "reason", err)
+	if err := s.Run(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			logger.Info("autoscaler stopped", "reason", err)
+		} else {
+			logger.Error("autoscaler failed", "error", err)
+		}
 	}
 }
 
@@ -128,15 +133,23 @@ func runDualService(ctx context.Context, logger *slog.Logger, cfg config.Config,
 
 	go func() {
 		defer wg.Done()
-		if err := regularScaler.Run(ctx); err != nil && ctx.Err() != nil {
-			logger.Info("regular scaler stopped", "reason", err)
+		if err := regularScaler.Run(ctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				logger.Info("regular scaler stopped", "reason", err)
+			} else {
+				logger.Error("regular scaler failed", "error", err)
+			}
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		if err := spotScaler.Run(ctx); err != nil && ctx.Err() != nil {
-			logger.Info("spot scaler stopped", "reason", err)
+		if err := spotScaler.Run(ctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				logger.Info("spot scaler stopped", "reason", err)
+			} else {
+				logger.Error("spot scaler failed", "error", err)
+			}
 		}
 	}()
 

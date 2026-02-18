@@ -1,5 +1,5 @@
 // Package metrics provides Prometheus metrics for the autoscaler.
-package metrics
+package metrics //nolint:revive // "metrics" is not a stdlib package; revive false positive
 
 import (
 	"net/http"
