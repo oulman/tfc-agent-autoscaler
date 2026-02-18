@@ -3,6 +3,7 @@ package ecs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -336,6 +337,102 @@ func TestGetTaskIPs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetTaskIPsPagination(t *testing.T) {
+	t.Run("multiple pages of ListTasks", func(t *testing.T) {
+		callCount := 0
+		c := &Client{
+			cluster: testCluster,
+			service: testService,
+			api: &mockECSAPI{
+				listTasksFn: func(_ context.Context, input *ecs.ListTasksInput, _ ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
+					callCount++
+					if input.NextToken == nil {
+						// First page
+						return &ecs.ListTasksOutput{
+							TaskArns:  []string{"arn:task/1", "arn:task/2"},
+							NextToken: aws.String("page2"),
+						}, nil
+					}
+					if *input.NextToken == "page2" {
+						// Second page
+						return &ecs.ListTasksOutput{
+							TaskArns: []string{"arn:task/3"},
+						}, nil
+					}
+					t.Fatalf("unexpected NextToken: %s", *input.NextToken)
+					return nil, nil
+				},
+				describeTasksFn: func(_ context.Context, input *ecs.DescribeTasksInput, _ ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
+					tasks := make([]types.Task, 0, len(input.Tasks))
+					for _, arn := range input.Tasks {
+						tasks = append(tasks, types.Task{
+							TaskArn: aws.String(arn),
+							Attachments: []types.Attachment{
+								{
+									Type: aws.String("ElasticNetworkInterface"),
+									Details: []types.KeyValuePair{
+										{Name: aws.String("privateIPv4Address"), Value: aws.String("10.0.0.1")},
+									},
+								},
+							},
+						})
+					}
+					return &ecs.DescribeTasksOutput{Tasks: tasks}, nil
+				},
+			},
+		}
+
+		got, err := c.GetTaskIPs(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if callCount != 2 {
+			t.Errorf("ListTasks calls: got %d, want 2", callCount)
+		}
+		if len(got) != 3 {
+			t.Fatalf("task count: got %d, want 3", len(got))
+		}
+	})
+
+	t.Run("DescribeTasks batches at 100", func(t *testing.T) {
+		// Generate 150 task ARNs in a single ListTasks response
+		arns := make([]string, 150)
+		for i := range arns {
+			arns[i] = fmt.Sprintf("arn:task/%d", i)
+		}
+
+		var describeCalls int
+		c := &Client{
+			cluster: testCluster,
+			service: testService,
+			api: &mockECSAPI{
+				listTasksFn: func(_ context.Context, _ *ecs.ListTasksInput, _ ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
+					return &ecs.ListTasksOutput{TaskArns: arns}, nil
+				},
+				describeTasksFn: func(_ context.Context, input *ecs.DescribeTasksInput, _ ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
+					describeCalls++
+					tasks := make([]types.Task, 0, len(input.Tasks))
+					for _, arn := range input.Tasks {
+						tasks = append(tasks, types.Task{TaskArn: aws.String(arn)})
+					}
+					return &ecs.DescribeTasksOutput{Tasks: tasks}, nil
+				},
+			},
+		}
+
+		got, err := c.GetTaskIPs(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if describeCalls != 2 {
+			t.Errorf("DescribeTasks calls: got %d, want 2", describeCalls)
+		}
+		if len(got) != 150 {
+			t.Errorf("task count: got %d, want 150", len(got))
+		}
+	})
 }
 
 func TestSetTaskProtection(t *testing.T) {

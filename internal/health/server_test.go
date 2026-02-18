@@ -177,6 +177,23 @@ func TestCompositeProbeEmpty(t *testing.T) {
 	}
 }
 
+func TestServerTimeouts(t *testing.T) {
+	srv := NewServer(":0", &AtomicReady{})
+
+	if srv.httpServer.ReadTimeout != 5*time.Second {
+		t.Errorf("ReadTimeout: got %v, want 5s", srv.httpServer.ReadTimeout)
+	}
+	if srv.httpServer.WriteTimeout != 10*time.Second {
+		t.Errorf("WriteTimeout: got %v, want 10s", srv.httpServer.WriteTimeout)
+	}
+	if srv.httpServer.ReadHeaderTimeout != 5*time.Second {
+		t.Errorf("ReadHeaderTimeout: got %v, want 5s", srv.httpServer.ReadHeaderTimeout)
+	}
+	if srv.httpServer.IdleTimeout != 60*time.Second {
+		t.Errorf("IdleTimeout: got %v, want 60s", srv.httpServer.IdleTimeout)
+	}
+}
+
 func TestServerRunAndShutdown(t *testing.T) {
 	srv := NewServer("127.0.0.1:0", &AtomicReady{})
 
